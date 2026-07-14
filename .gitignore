@@ -27,6 +27,9 @@ tests/fixtures/*.wav
 *.env
 !config/*.example.yaml
 
+# Local per-run config (contains user-specific paths); keep the template tracked
+config/job.yaml
+
 # OS / editor
 .DS_Store
 .idea/

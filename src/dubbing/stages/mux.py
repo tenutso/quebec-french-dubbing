@@ -42,12 +42,14 @@ def run(ctx: "Context") -> None:
         vcodec = ["-c:v", "copy"]
 
     if dub is not None:
-        # French dub becomes the default/first audio track; keep original as secondary.
+        # French dub is the first audio track AND the only default one; keep the original
+        # as a secondary, non-default track. The original's audio carries a `default`
+        # disposition that we must explicitly clear on a:1, or players auto-select English.
         cmd += [
             "-map", "0:v:0", "-map", "1:a:0", "-map", "0:a:0?",
             *vcodec, "-c:a", "aac", "-b:a", "192k",
-            "-metadata:s:a:0", "language=fra", "-disposition:s:a:0", "default",
-            "-metadata:s:a:1", "language=eng",
+            "-metadata:s:a:0", "language=fra", "-metadata:s:a:1", "language=eng",
+            "-disposition:a:0", "default", "-disposition:a:1", "0",
         ]
     else:
         cmd += ["-map", "0", *vcodec, "-c:a", "copy"]

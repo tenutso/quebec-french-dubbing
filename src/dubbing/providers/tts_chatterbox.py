@@ -10,6 +10,7 @@ translated text (the model speaks generic French with the reference speaker's ti
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from dubbing.providers.registry import register_tts_provider
@@ -21,6 +22,13 @@ logger = logging.getLogger(__name__)
 _LOCALE_TO_LANG = {"fr-CA": "fr", "fr-FR": "fr", "fr": "fr"}
 
 
+def _genf(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
 class ChatterboxTTS:
     name = "chatterbox"
     locale_support = set(_LOCALE_TO_LANG)
@@ -30,6 +38,16 @@ class ChatterboxTTS:
         self._device = device
         self._model = model  # lazy: heavy weights load on first synth, injectable for tests
         self._sr: int | None = None
+        # Generation controls. cfg_weight is the key cross-lingual lever: lower it to
+        # reduce adherence to an English reference's delivery so French prosody surfaces.
+        # A neutral fr-CA reference clip (CHATTERBOX_FR_REF) can steer prosody without
+        # losing too much identity when blended by the user.
+        self._exaggeration = _genf("CHATTERBOX_EXAGGERATION", 0.5)
+        # 0.5 is the most natural/stable default; lower it (~0.2-0.3) to reduce an
+        # English reference's prosody bleed if you prefer that trade-off.
+        self._cfg_weight = _genf("CHATTERBOX_CFG_WEIGHT", 0.5)
+        self._temperature = _genf("CHATTERBOX_TEMPERATURE", 0.8)
+        self._fr_ref = os.environ.get("CHATTERBOX_FR_REF")  # optional fr reference clip
 
     def _ensure_model(self):
         if self._model is None:
@@ -68,8 +86,16 @@ class ChatterboxTTS:
         model = self._ensure_model()
         lang = _LOCALE_TO_LANG.get(locale, "fr")
         ref = voice.voice_id if voice.voice_id and Path(voice.voice_id).exists() else None
+        # A neutral fr-CA reference overrides the speaker clone for prosody, if provided.
+        if self._fr_ref and Path(self._fr_ref).exists():
+            ref = self._fr_ref
 
-        wav = model.generate(text, language_id=lang, audio_prompt_path=ref)
+        wav = model.generate(
+            text, language_id=lang, audio_prompt_path=ref,
+            exaggeration=self._exaggeration,
+            cfg_weight=self._cfg_weight,
+            temperature=self._temperature,
+        )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         # wav is a (1, N) float tensor (possibly on GPU); torchaudio wants CPU.
         torchaudio.save(str(out_path), wav.detach().cpu(), self._sr)
