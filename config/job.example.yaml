@@ -1,0 +1,17 @@
+# Example job spec. Copy to job.yaml and edit.
+# Relative paths are resolved against this file's directory.
+
+input_path: ../tests/fixtures/sample_2spk.mp4
+work_dir: ../.work/sample
+target_locale: fr-CA          # this pipeline only targets Quebec French
+
+dub_style: full_replacement   # full_replacement | voice_over | subtitles_only
+voice_strategy: clone         # clone | preset
+loudness: web                 # web (-16 LUFS) | broadcast (-23 LUFS)
+burn_in_subtitles: false      # false -> sidecar SRT/VTT only
+
+providers:
+  translation: ollama         # ollama (local OSS, default) | claude (premium)
+  tts: chatterbox             # chatterbox (local OSS clone) | elevenlabs | azure
+
+glossary_path: ./glossary.fr-CA.yaml

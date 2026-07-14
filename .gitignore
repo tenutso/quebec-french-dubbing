@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments (large; recreate with `make install` / `make install-gpu`)
+.venv/
+.venv-gpu/
+venv/
+env/
+
+# Pipeline work dirs, model outputs, logs (regenerate at runtime)
+.work/
+*.log
+
+# Generated fixtures (recreate with `make fixture`)
+tests/fixtures/*.mp4
+tests/fixtures/*.wav
+
+# Secrets — never commit
+.env
+*.env
+!config/*.example.yaml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

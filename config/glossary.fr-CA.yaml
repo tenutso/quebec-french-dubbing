@@ -1,0 +1,25 @@
+# Quebec French terminology and do-not-translate list.
+# `terms`: source term (as it appears in English) -> preferred fr-CA rendering.
+# Terms mapped to themselves are effectively "do not translate" (brand names, product
+# names, acronyms). The translator is instructed to honor these exactly.
+
+terms:
+  # Quebec register preferences (vs. France French)
+  email: courriel
+  weekend: fin de semaine
+  chat: clavardage
+  shopping: magasinage
+  parking: stationnement
+  "coffee break": pause-cafe
+
+  # Instructional / course domain
+  webinar: webinaire
+  "course content": contenu de cours
+  module: module
+  quiz: questionnaire
+  "learning objective": objectif d'apprentissage
+  worksheet: feuille d'exercices
+
+  # Do-not-translate (brands/products) — map to self
+  Anthropic: Anthropic
+  Claude: Claude
