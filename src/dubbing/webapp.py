@@ -65,12 +65,15 @@ def build_job(
     )
 
 
-def apply_chatterbox_env(cfg_weight, exaggeration, temperature, fr_ref, max_chars) -> None:
+def apply_chatterbox_env(
+    cfg_weight, exaggeration, temperature, fr_ref, max_chars, model_dir=None
+) -> None:
     """Set the Chatterbox generation knobs the provider reads from the environment.
 
     The provider is re-instantiated each run (reading these env vars in __init__), and the
     app serializes runs via ``queue()``, so setting process env per run is safe. Every run
-    sets all knobs — including clearing the fr-CA reference — so nothing leaks across runs.
+    sets all knobs — including clearing the fr-CA reference and fine-tuned checkpoint dir —
+    so nothing leaks across runs.
     """
     os.environ["CHATTERBOX_CFG_WEIGHT"] = str(float(cfg_weight))
     os.environ["CHATTERBOX_EXAGGERATION"] = str(float(exaggeration))
@@ -81,6 +84,10 @@ def apply_chatterbox_env(cfg_weight, exaggeration, temperature, fr_ref, max_char
         os.environ["CHATTERBOX_FR_REF"] = str(ref)
     else:
         os.environ.pop("CHATTERBOX_FR_REF", None)
+    if model_dir and str(model_dir).strip():
+        os.environ["CHATTERBOX_MODEL_DIR"] = str(model_dir).strip()
+    else:
+        os.environ.pop("CHATTERBOX_MODEL_DIR", None)
 
 
 def process(
@@ -96,6 +103,7 @@ def process(
     temperature: float,
     fr_ref,
     max_chars: int,
+    model_dir: str = "",
     progress=gr.Progress(),
 ):
     """Run the full pipeline for an uploaded file and return UI outputs.
@@ -109,7 +117,7 @@ def process(
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     work_dir = Path(tempfile.mkdtemp(prefix=f"{src.stem}-{stamp}-", dir=_workroot()))
 
-    apply_chatterbox_env(cfg_weight, exaggeration, temperature, fr_ref, max_chars)
+    apply_chatterbox_env(cfg_weight, exaggeration, temperature, fr_ref, max_chars, model_dir)
     job = build_job(
         src, work_dir,
         dub_style=dub_style, voice_strategy=voice_strategy, loudness=loudness,
@@ -213,6 +221,11 @@ def build_demo():
                         label="Native fr-CA reference clip (optional, overrides clone)",
                         file_types=[".wav", ".mp3", ".flac"],
                     )
+                    model_dir = gr.Textbox(
+                        label="Fine-tuned checkpoint dir (optional)",
+                        placeholder="/path/to/qc-fr checkpoint dir (from_local); blank = base model",
+                        info="a Québec-French T3 checkpoint — see the README fine-tuning recipe",
+                    )
                 run_btn = gr.Button("Run dub", variant="primary")
             with gr.Column(scale=1):
                 video_out = gr.Video(label="Dubbed preview")
@@ -223,7 +236,7 @@ def build_demo():
             fn=process,
             inputs=[
                 video_in, dub_style, voice_strategy, loudness, burn_in, translation, tts,
-                cfg_weight, exaggeration, temperature, fr_ref, max_chars,
+                cfg_weight, exaggeration, temperature, fr_ref, max_chars, model_dir,
             ],
             outputs=[video_out, files_out, status_out],
         )

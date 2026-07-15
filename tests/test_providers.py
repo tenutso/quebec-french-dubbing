@@ -30,6 +30,43 @@ def test_chatterbox_is_default_and_supports_cloning():
     assert p.preset_voice("S1", 0).voice_id == ""
 
 
+def test_chatterbox_uses_from_local_when_model_dir_set(monkeypatch):
+    """CHATTERBOX_MODEL_DIR routes model loading to from_local (a fine-tuned checkpoint);
+    otherwise the pretrained base is used. Verified without loading real weights."""
+    mtl = pytest.importorskip("chatterbox.mtl_tts")
+    from dubbing.providers.tts_chatterbox import ChatterboxTTS
+
+    calls: dict[str, object] = {}
+
+    class _FakeModel:
+        sr = 24000
+
+    class _FakeMTL:
+        @classmethod
+        def from_local(cls, ckpt_dir, device):
+            calls["from_local"] = (ckpt_dir, device)
+            return _FakeModel()
+
+        @classmethod
+        def from_pretrained(cls, device):
+            calls["from_pretrained"] = device
+            return _FakeModel()
+
+    monkeypatch.setattr(mtl, "ChatterboxMultilingualTTS", _FakeMTL)
+
+    # Unset -> pretrained base.
+    monkeypatch.delenv("CHATTERBOX_MODEL_DIR", raising=False)
+    ChatterboxTTS(device="cpu")._ensure_model()
+    assert "from_pretrained" in calls and "from_local" not in calls
+
+    # Set -> from_local with that directory.
+    calls.clear()
+    monkeypatch.setenv("CHATTERBOX_MODEL_DIR", "/tmp/qc-ckpt")
+    ChatterboxTTS(device="cpu")._ensure_model()
+    assert calls.get("from_local") == ("/tmp/qc-ckpt", "cpu")
+    assert "from_pretrained" not in calls
+
+
 def test_provider_without_fr_ca_is_rejected():
     class Bad:
         name = "bad"

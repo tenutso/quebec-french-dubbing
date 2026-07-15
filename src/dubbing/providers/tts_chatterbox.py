@@ -116,6 +116,10 @@ class ChatterboxTTS:
         self._temperature = _genf("CHATTERBOX_TEMPERATURE", 0.8)
         self._fr_ref = os.environ.get("CHATTERBOX_FR_REF")  # optional fr reference clip
         self._max_chars = _geni("CHATTERBOX_MAX_CHARS", _DEFAULT_MAX_CHARS)
+        # A directory of fine-tuned weights (e.g. a Québec-French T3 checkpoint). When set,
+        # the model is loaded from it via from_local instead of the pretrained base; see the
+        # "Fine-tuning Chatterbox on Québec French" section of the README.
+        self._model_dir = os.environ.get("CHATTERBOX_MODEL_DIR")
 
     def _ensure_model(self):
         if self._model is None:
@@ -123,7 +127,11 @@ class ChatterboxTTS:
             from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
             device = self._device or ("cuda" if torch.cuda.is_available() else "cpu")
-            self._model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+            if self._model_dir:
+                logger.info("loading Chatterbox from local checkpoint %s", self._model_dir)
+                self._model = ChatterboxMultilingualTTS.from_local(self._model_dir, device)
+            else:
+                self._model = ChatterboxMultilingualTTS.from_pretrained(device=device)
         if self._sr is None:
             self._sr = int(getattr(self._model, "sr", 24000))
         return self._model

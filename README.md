@@ -125,11 +125,51 @@ English prosody in (inherent to cross-lingual cloning). Dials, via env vars:
 ```bash
 export CHATTERBOX_CFG_WEIGHT=0.5     # default; lower (0.2–0.3) = less English-reference prosody
 export CHATTERBOX_EXAGGERATION=0.5   # lower = calmer delivery
+export CHATTERBOX_TEMPERATURE=0.8    # sampling variance
+export CHATTERBOX_MAX_CHARS=180      # synth chunk size (smaller = more stable, fewer cutoffs)
 export CHATTERBOX_FR_REF=/path/fr.wav  # use a neutral fr-CA clip for prosody (loses speaker identity)
+export CHATTERBOX_MODEL_DIR=/path/ckpt # load a fine-tuned checkpoint (see below); blank = base model
 ```
 
 For the strongest **native Québec prosody**, use `--tts-provider azure` (preset fr-CA neural
-voices; no cloning).
+voices; no cloning). The same dials are exposed in the [Web UI](#web-ui)'s *Chatterbox voice
+tuning* panel.
+
+### Fine-tuning Chatterbox on Québec French
+
+You can train your own Québec-French checkpoint and point the pipeline at it with
+`CHATTERBOX_MODEL_DIR` (or the web UI's *Fine-tuned checkpoint dir* field), which loads it via
+Chatterbox's `from_local(ckpt_dir, device)`.
+
+> **What this fixes — and what it doesn't.** A fine-tune improves the model's *base* Québec
+> pronunciation, vocabulary and default prosody. But the dub clones the **English** speaker
+> zero-shot, and that reference still pulls prosody toward English — so a fine-tune *reduces*
+> the accent, it doesn't eliminate it. Best results come from a fine-tuned checkpoint **plus**
+> a low `CHATTERBOX_CFG_WEIGHT` (~0.3) and/or a neutral `CHATTERBOX_FR_REF` clip. If you need a
+> fully native accent and don't need the original timbre, a preset fr-CA voice (`--tts-provider
+> azure`) will always win.
+
+The standard recipe is a **LoRA fine-tune of Chatterbox's T3 backbone** (~7.8M trainable
+params of the 0.5B Llama model); `ve`/`s3gen`/tokenizer stay frozen. The real training run is a
+separate offline effort (a QC dataset + GPU-hours), not part of `make install`:
+
+1. **Data.** Collect Québec-French audio + accurate transcripts. A good start is Mozilla
+   [Common Voice](https://commonvoice.mozilla.org) `fr` filtered to `accent = Canada/Québec`;
+   supplement with other QC sources. Clean and VAD-trim to 24 kHz mono. LoRA is viable from a
+   few hours of speech; ~5–20 h is comfortable.
+2. **Preprocess.** Encode speech tokens with `s3tokenizer` and text with Chatterbox's
+   `MTLTokenizer` (`grapheme_mtl_merged_expanded_v1.json`), using `language_id="fr"`.
+3. **Train.** LoRA (rank-32 on the T3 attention/MLP projections), freezing `ve`/`s3gen`. Use a
+   community trainer as a base — e.g.
+   [chatterbox-finetuning-multilingual](https://github.com/Ahmed-Ezzat20/chatterbox-finetuning-multilingual)
+   (`lora.py`) or [AliAbdallah21/…](https://github.com/AliAbdallah21/Chatterbox-Multilingual-TTS-Fine-Tuning);
+   good quality is reported around ~2000 steps.
+4. **Merge + package.** Merge the LoRA adapter into T3 and save `t3_mtl23ls_v2.safetensors`.
+   Grab the base auxiliary files (`huggingface-cli download ResembleAI/chatterbox`) and place
+   `ve.pt`, `s3gen.pt`, `grapheme_mtl_merged_expanded_v1.json` (and optional `conds.pt`)
+   alongside your merged T3 in one `ckpt_dir`.
+5. **Use.** `export CHATTERBOX_MODEL_DIR=/path/ckpt_dir` and run as usual, combined with the
+   `CHATTERBOX_CFG_WEIGHT` / `CHATTERBOX_FR_REF` dials above.
 
 ---
 
