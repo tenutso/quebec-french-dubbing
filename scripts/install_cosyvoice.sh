@@ -35,11 +35,29 @@ else
   git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git "$COSYVOICE_DIR"
 fi
 
-# 2. Install CosyVoice's requirements, holding the CUDA torch trio via our constraints.
-log "Installing CosyVoice requirements (torch trio protected by constraints-gpu.txt)"
-"$PIP" install -r "$COSYVOICE_DIR/requirements.txt" \
-  --constraint "$REPO_ROOT/constraints-gpu.txt" || {
-    echo "warn: constrained install had conflicts; review output above."; }
+# 2. Install CosyVoice's deps WITHOUT disturbing the pinned stack.
+# CosyVoice's requirements.txt hard-pins torch==2.3.1 / transformers==4.51.3 /
+# numpy==1.26.4 (older than ours), so `-r requirements.txt` is unsatisfiable against
+# the pipeline env. Instead install only the deps it needs that we don't already
+# provide, under a constraint that forbids downgrading the pinned stack. CosyVoice
+# imports and runs fine against the newer torch/transformers/numpy.
+log "Installing CosyVoice's additive deps (pinned stack protected from downgrade)"
+CONSTRAINT="$(mktemp)"
+cat "$REPO_ROOT/constraints-gpu.txt" > "$CONSTRAINT"
+cat >> "$CONSTRAINT" <<'EOF'
+transformers==5.2.0
+numpy>=2.1
+tokenizers>=0.22
+librosa>=0.11
+lightning>=2.6
+pydantic>=2.9
+protobuf>=7
+networkx>=3.3
+gradio>=6
+EOF
+"$PIP" install --constraint "$CONSTRAINT" \
+  hyperpyyaml gdown hydra-core wget inflect wetext modelscope \
+  openai-whisper pyworld x-transformers onnxruntime
 
 # 3. Download the Fun-CosyVoice 3.0 model (once).
 log "Downloading model $MODEL_ID -> $MODEL_DIR"

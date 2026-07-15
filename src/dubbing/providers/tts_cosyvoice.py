@@ -46,12 +46,14 @@ class CosyVoiceTTS:
 
     def _ensure_model(self):
         if self._model is None:
-            # CosyVoice imports its bundled Matcha-TTS via a relative path; make it
-            # importable from the checkout before importing the package.
+            # CosyVoice is a source checkout, not a pip package: put the repo root (which
+            # holds the `cosyvoice` package) and its bundled Matcha-TTS on sys.path before
+            # importing. COSYVOICE_ROOT points at the checkout.
             if self._root:
-                matcha = str(Path(self._root) / "third_party" / "Matcha-TTS")
-                if matcha not in sys.path:
-                    sys.path.append(matcha)
+                root = Path(self._root).resolve()
+                for p in (str(root), str(root / "third_party" / "Matcha-TTS")):
+                    if p not in sys.path:
+                        sys.path.insert(0, p)
             from cosyvoice.cli.cosyvoice import AutoModel
 
             logger.info("loading CosyVoice model from %s", self._model_dir)
