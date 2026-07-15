@@ -52,7 +52,7 @@ cp config/job.example.yaml config/job.yaml
 **4. Run it:**
 
 ```bash
-.venv-gpu/bin/dubbing run config/job.yaml
+.venv/bin/dubbing run config/job.yaml
 ```
 
 **5. Collect the outputs** from your `work_dir`:
@@ -76,8 +76,8 @@ scales with video length (roughly real-time analysis + a few seconds of GPU per 
 #   set `dub_style: voice_over`.
 
 # A/B a premium vendor without editing the file (needs that vendor's API key):
-.venv-gpu/bin/dubbing run config/job.yaml --tts-provider azure          # native fr-CA neural voices
-.venv-gpu/bin/dubbing run config/job.yaml --translation-provider claude # premium translation
+.venv/bin/dubbing run config/job.yaml --tts-provider azure          # native fr-CA neural voices
+.venv/bin/dubbing run config/job.yaml --translation-provider claude # premium translation
 ```
 
 ### Tuning the local voice (Chatterbox)
@@ -98,27 +98,39 @@ voices; no cloning).
 
 ## Setup
 
-Two virtualenvs: a light one for tests, and a GPU one (created with `--system-site-packages`
-so it reuses the host's CUDA-matched PyTorch).
+One environment. The venv is created with `--system-site-packages` so it reuses the host's
+CUDA-matched PyTorch, and everything installs with a single command (needs a CUDA PyTorch
+already present on the host):
 
 ```bash
-# Light env for the unit tests (no GPU/model deps):
-make install        # core + provider SDKs into .venv
+make install        # creates .venv, installs the full local GPU pipeline
 make test           # 39 tests
+```
 
-# GPU env for real runs (needs a CUDA PyTorch already present on the host):
-python3 -m venv --system-site-packages .venv-gpu
-.venv-gpu/bin/pip install -U pip
-.venv-gpu/bin/pip install --constraint constraints-gpu.txt \
+`make install` does exactly what you'd run by hand:
+
+```bash
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -U pip
+# Core + local-TTS deps, against the host torch trio:
+.venv/bin/pip install --constraint constraints-gpu.txt \
   --extra-index-url https://download.pytorch.org/whl/cu128 \
-  -e ".[dev,audio,translate,tts,gpu]" chatterbox-tts
+  -e ".[dev,tts-local]"
+# Chatterbox itself, WITHOUT its deps (it hard-pins torch==2.6.0; --no-deps
+# leaves the CUDA torch trio untouched):
+.venv/bin/pip install --no-deps chatterbox-tts==0.1.7
+
+# Optional premium cloud voices/translation (each needs that vendor's key):
+make install-premium
 
 # Ollama (local translation LLM):
 #   install Ollama, then: ollama serve &  &&  ollama pull mistral-small
 ```
 
 `constraints-gpu.txt` pins the `torch/torchaudio/torchvision` trio so the model libraries
-(pyannote, WhisperX, Chatterbox — which over-pin their deps) can't downgrade your CUDA build.
+(pyannote, WhisperX) can't downgrade your CUDA build. Chatterbox can't be pinned through a
+constraints file — it declares a hard `torch==2.6.0` dependency — so it is installed with
+`--no-deps` and its remaining runtime libraries come from the `tts-local` extra.
 
 The GPU stages can also run on **Modal** instead of locally: `make deploy-gpu`, then
 `export DUBBING_GPU_BACKEND=modal`.

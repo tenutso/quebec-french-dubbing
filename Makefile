@@ -1,31 +1,40 @@
 VENV ?= .venv
-PY := $(VENV)/bin/python
-PIP := $(VENV)/bin/pip
+PY   := $(VENV)/bin/python
+PIP  := $(VENV)/bin/pip
 
-.PHONY: help venv install install-audio install-gpu test fixture sample deploy-gpu clean
+# Chatterbox over-pins its deps (notably torch==2.6.0), so it is installed with
+# --no-deps against the host CUDA torch trio. Bump this to move the version.
+CHATTERBOX_VERSION ?= 0.1.7
+# PyTorch wheels matched to the CUDA build pinned in constraints-gpu.txt.
+TORCH_INDEX ?= https://download.pytorch.org/whl/cu128
+
+.PHONY: help venv install install-premium test fixture sample deploy-gpu clean
 
 help:
 	@echo "Targets:"
-	@echo "  install        Core deps (models/subtitles) into $(VENV)"
-	@echo "  install-audio  Add audio mastering deps (numpy/soundfile/pyloudnorm)"
-	@echo "  install-gpu    Add OSS GPU stack (demucs/pyannote/whisperx) — needs a GPU"
-	@echo "  test           Run the test suite"
-	@echo "  fixture        Generate tests/fixtures/sample_2spk.mp4"
-	@echo "  sample         Run the pipeline on config/job.yaml"
-	@echo "  deploy-gpu     Deploy the Modal GPU app"
+	@echo "  install         Create the GPU venv and install the full local pipeline"
+	@echo "  install-premium Add the optional premium cloud provider SDKs"
+	@echo "  test            Run the test suite"
+	@echo "  fixture         Generate tests/fixtures/sample_2spk.mp4"
+	@echo "  sample          Run the pipeline on config/job.yaml"
+	@echo "  deploy-gpu      Deploy the Modal GPU app"
 
+# --system-site-packages reuses the host's CUDA-matched PyTorch.
 venv:
-	python3 -m venv $(VENV)
+	python3 -m venv --system-site-packages $(VENV)
 
+# One environment, one command. Installs the core + local-TTS deps against the
+# host torch trio, then adds Chatterbox itself with --no-deps (it hard-pins
+# torch==2.6.0, which a constraints file cannot relax).
 install: venv
 	$(PIP) install -q -U pip
-	$(PIP) install -q -e ".[dev,translate,tts]"
+	$(PIP) install -q --constraint constraints-gpu.txt --extra-index-url $(TORCH_INDEX) \
+	  -e ".[dev,tts-local]"
+	$(PIP) install -q --no-deps "chatterbox-tts==$(CHATTERBOX_VERSION)"
 
-install-audio:
-	$(PIP) install -q -e ".[audio]"
-
-install-gpu:
-	$(PIP) install -q -e ".[gpu,orchestration]"
+install-premium:
+	$(PIP) install -q --constraint constraints-gpu.txt --extra-index-url $(TORCH_INDEX) \
+	  -e ".[premium]"
 
 test:
 	$(VENV)/bin/pytest -q

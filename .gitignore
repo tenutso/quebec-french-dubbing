@@ -8,7 +8,7 @@ dist/
 .coverage
 htmlcov/
 
-# Virtual environments (large; recreate with `make install` / `make install-gpu`)
+# Virtual environment (large; recreate with `make install`)
 .venv/
 .venv-gpu/
 venv/
