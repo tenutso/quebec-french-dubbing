@@ -30,23 +30,25 @@ def _wav_dur(path):
         return w.getnframes() / float(w.getframerate())
 
 
-def test_fit_clip_hits_target_within_stretch_bounds(tmp_path):
+def test_fit_clip_compresses_and_trims_when_over_window(tmp_path):
     src = tmp_path / "src.wav"
     _tone_wav(src, 1.0)
     dst = tmp_path / "dst.wav"
-    # Ask for 0.95s: a 5% compression, inside the ±8% band.
+    # Window of 0.95s: a 5% compression, inside the cap, trimmed to the window.
     speed = timefit.fit_clip(src, dst, 0.95)
     assert _wav_dur(dst) == pytest.approx(0.95, abs=0.03)
     assert 1.0 <= speed <= timefit.MAX_SPEEDUP
 
 
-def test_fit_clip_pads_when_target_longer(tmp_path):
+def test_fit_clip_keeps_natural_length_within_window(tmp_path):
     src = tmp_path / "src.wav"
     _tone_wav(src, 1.0)
     dst = tmp_path / "dst.wav"
-    # Ask for 2.0s: beyond slowdown bound, so it stretches to the cap then pads.
-    timefit.fit_clip(src, dst, 2.0)
-    assert _wav_dur(dst) == pytest.approx(2.0, abs=0.03)
+    # Window of 2.0s is longer than the 1.0s clip: keep natural timing (no stretch,
+    # no padding — the mix stage places clips on a silent bus).
+    speed = timefit.fit_clip(src, dst, 2.0)
+    assert _wav_dur(dst) == pytest.approx(1.0, abs=0.03)
+    assert speed == pytest.approx(1.0)
 
 
 def _ctx_with_clips(tmp_path):

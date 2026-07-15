@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 
 from dubbing.providers.registry import register_tts_provider
@@ -20,6 +21,72 @@ logger = logging.getLogger(__name__)
 
 # fr-CA -> Chatterbox language id ("fr"); the QC register comes from the text.
 _LOCALE_TO_LANG = {"fr-CA": "fr", "fr-FR": "fr", "fr": "fr"}
+
+# Chatterbox's alignment/EOS logic gets unstable on long inputs — it can force an early
+# EOS (cutting a sentence) or run away repeating tokens. Synthesizing in shorter chunks
+# and concatenating keeps each generation well-behaved. Override with CHATTERBOX_MAX_CHARS.
+_DEFAULT_MAX_CHARS = 180
+# A short gap inserted between concatenated chunks so words don't butt together.
+_CHUNK_GAP_S = 0.06
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+_CLAUSE_SPLIT = re.compile(r"(?<=[,;:])\s+")
+
+
+def _geni(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _split_text(text: str, max_chars: int = _DEFAULT_MAX_CHARS) -> list[str]:
+    """Split ``text`` into <=``max_chars`` chunks on sentence, then clause, boundaries."""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return [text] if text else []
+
+    def pack(pieces: list[str]) -> list[str]:
+        chunks: list[str] = []
+        cur = ""
+        for p in pieces:
+            p = p.strip()
+            if not p:
+                continue
+            if len(p) > max_chars:  # still too long: break on clause boundaries
+                if cur:
+                    chunks.append(cur)
+                    cur = ""
+                chunks.extend(pack(_CLAUSE_SPLIT.split(p)) if _CLAUSE_SPLIT.search(p)
+                              else _hard_wrap(p, max_chars))
+            elif not cur:
+                cur = p
+            elif len(cur) + 1 + len(p) <= max_chars:
+                cur = f"{cur} {p}"
+            else:
+                chunks.append(cur)
+                cur = p
+        if cur:
+            chunks.append(cur)
+        return chunks
+
+    return pack(_SENT_SPLIT.split(text)) or [text]
+
+
+def _hard_wrap(text: str, max_chars: int) -> list[str]:
+    """Last-resort wrap of a long clause with no punctuation, on word boundaries."""
+    out, cur = [], ""
+    for word in text.split():
+        if not cur:
+            cur = word
+        elif len(cur) + 1 + len(word) <= max_chars:
+            cur = f"{cur} {word}"
+        else:
+            out.append(cur)
+            cur = word
+    if cur:
+        out.append(cur)
+    return out
 
 
 def _genf(name: str, default: float) -> float:
@@ -48,6 +115,7 @@ class ChatterboxTTS:
         self._cfg_weight = _genf("CHATTERBOX_CFG_WEIGHT", 0.5)
         self._temperature = _genf("CHATTERBOX_TEMPERATURE", 0.8)
         self._fr_ref = os.environ.get("CHATTERBOX_FR_REF")  # optional fr reference clip
+        self._max_chars = _geni("CHATTERBOX_MAX_CHARS", _DEFAULT_MAX_CHARS)
 
     def _ensure_model(self):
         if self._model is None:
@@ -81,6 +149,7 @@ class ChatterboxTTS:
         target_duration: float | None = None,
         locale: str = "fr-CA",
     ) -> Path:
+        import torch
         import torchaudio
 
         model = self._ensure_model()
@@ -90,16 +159,30 @@ class ChatterboxTTS:
         if self._fr_ref and Path(self._fr_ref).exists():
             ref = self._fr_ref
 
-        wav = model.generate(
-            text, language_id=lang, audio_prompt_path=ref,
-            exaggeration=self._exaggeration,
-            cfg_weight=self._cfg_weight,
-            temperature=self._temperature,
-        )
+        # Synthesize in sentence-sized chunks (Chatterbox is unstable on long inputs),
+        # then concatenate with a short gap so nothing is cut and words don't run together.
+        chunks = _split_text(text, self._max_chars) or [text]
+        parts: list = []
+        gap = torch.zeros(1, int(self._sr_or_default() * _CHUNK_GAP_S))
+        for i, chunk in enumerate(chunks):
+            wav = model.generate(
+                chunk, language_id=lang, audio_prompt_path=ref,
+                exaggeration=self._exaggeration,
+                cfg_weight=self._cfg_weight,
+                temperature=self._temperature,
+            ).detach().cpu()
+            if i > 0:
+                parts.append(gap)
+            parts.append(wav)
+        wav = torch.cat(parts, dim=-1) if len(parts) > 1 else parts[0]
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        # wav is a (1, N) float tensor (possibly on GPU); torchaudio wants CPU.
-        torchaudio.save(str(out_path), wav.detach().cpu(), self._sr)
+        # wav is a (1, N) float tensor on CPU; torchaudio writes it at the model's rate.
+        torchaudio.save(str(out_path), wav, self._sr)
         return out_path
+
+    def _sr_or_default(self) -> int:
+        return self._sr or 24000
 
 
 @register_tts_provider("chatterbox")
