@@ -10,7 +10,7 @@ from dubbing.providers.tts import TTSProvider, VoiceRef, assert_supports_target
 
 
 def test_registered_tts_providers_declare_fr_ca():
-    for name in ("chatterbox", "elevenlabs", "azure"):
+    for name in ("chatterbox", "cosyvoice", "elevenlabs", "azure"):
         p = providers.get_tts_provider(
             name, client=object(), synthesizer_factory=lambda *a: None, model=object()
         )
@@ -65,6 +65,61 @@ def test_chatterbox_uses_from_local_when_model_dir_set(monkeypatch):
     ChatterboxTTS(device="cpu")._ensure_model()
     assert calls.get("from_local") == ("/tmp/qc-ckpt", "cpu")
     assert "from_pretrained" not in calls
+
+
+class _FakeCosy:
+    """Stand-in for CosyVoice's AutoModel; records the cross-lingual call."""
+
+    sample_rate = 24000
+
+    def __init__(self):
+        self.calls = []
+
+    def inference_cross_lingual(self, text, prompt, stream=False):
+        import torch
+
+        self.calls.append((text, prompt, stream))
+        yield {"tts_speech": torch.zeros(1, 2400)}  # two chunks -> exercise concat
+        yield {"tts_speech": torch.zeros(1, 1200)}
+
+
+def test_cosyvoice_cross_lingual_synthesis(tmp_path):
+    import wave
+
+    from dubbing.providers.tts import VoiceRef
+    from dubbing.providers.tts_cosyvoice import CosyVoiceTTS
+
+    ref = tmp_path / "ref.wav"
+    ref.write_bytes(b"x")  # only existence is checked; the model call is faked
+    fake = _FakeCosy()
+    provider = CosyVoiceTTS(model=fake)
+    out = tmp_path / "o.wav"
+
+    provider.synthesize(
+        "Bonjour le monde",
+        VoiceRef(provider="cosyvoice", voice_id=str(ref), is_clone=True),
+        out,
+        locale="fr-CA",
+    )
+
+    # Cross-lingual called with the French text + the reference filepath (not a tensor).
+    assert fake.calls == [("Bonjour le monde", str(ref), False)]
+    # Both yielded chunks were concatenated (2400 + 1200) at the model sample rate.
+    assert out.exists()
+    with wave.open(str(out)) as w:
+        assert w.getnframes() == 3600 and w.getframerate() == 24000
+
+
+def test_cosyvoice_requires_a_reference(tmp_path):
+    from dubbing.providers.tts import VoiceRef
+    from dubbing.providers.tts_cosyvoice import CosyVoiceTTS
+
+    provider = CosyVoiceTTS(model=_FakeCosy())
+    # No clone reference and no COSYVOICE_FR_REF -> a clear error, not a crash mid-synth.
+    with pytest.raises(RuntimeError, match="reference clip"):
+        provider.synthesize(
+            "Bonjour", VoiceRef(provider="cosyvoice", voice_id=""), tmp_path / "o.wav"
+        )
 
 
 def test_provider_without_fr_ca_is_rejected():

@@ -20,6 +20,7 @@ from dubbing.providers.tts import TTSProvider, VoiceRef
 from dubbing.providers import translation_ollama as _translation_ollama  # noqa: E402,F401
 from dubbing.providers import translation_claude as _translation_claude  # noqa: E402,F401
 from dubbing.providers import tts_chatterbox as _tts_chatterbox  # noqa: E402,F401
+from dubbing.providers import tts_cosyvoice as _tts_cosyvoice  # noqa: E402,F401
 from dubbing.providers import tts_elevenlabs as _tts_elevenlabs  # noqa: E402,F401
 from dubbing.providers import tts_azure as _tts_azure  # noqa: E402,F401
 

@@ -188,8 +188,8 @@ def build_demo():
                         ["ollama", "claude"], value="ollama", label="Translation",
                     )
                     tts = gr.Dropdown(
-                        ["chatterbox", "elevenlabs", "azure"], value="chatterbox",
-                        label="TTS voice",
+                        ["chatterbox", "cosyvoice", "elevenlabs", "azure"],
+                        value="chatterbox", label="TTS voice",
                     )
                 burn_in = gr.Checkbox(
                     label="Burn subtitles into the video", value=False

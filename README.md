@@ -223,10 +223,31 @@ TTS and translation are Strategy interfaces resolved by name from a registry
 (`src/dubbing/providers/`); a provider that can't produce `fr-CA` is rejected at job start.
 
 - **Translation:** `ollama` (local, default), `claude` (premium).
-- **TTS:** `chatterbox` (local cloning, default), `elevenlabs` (cloning), `azure` (fr-CA neural).
+- **TTS:** `chatterbox` (local cloning, default), `cosyvoice` (local cross-lingual cloning),
+  `elevenlabs` (cloning), `azure` (fr-CA neural).
 
 Select per job in `config/job.yaml` under `providers:`, or override on the CLI with
 `--tts-provider` / `--translation-provider`.
+
+### CosyVoice (cross-lingual, less English accent)
+
+`cosyvoice` uses Fun-CosyVoice 3.0's **cross-lingual** synthesis: the reference clip supplies
+the speaker's *timbre* while the French text drives the *prosody/pronunciation*, so cloning an
+English speaker bleeds far less English accent than Chatterbox's continuation-style cloning
+(it still won't produce a specifically Québécois accent — that's standard French prosody + the
+speaker's voice). Apache-2.0, local GPU.
+
+CosyVoice is a **from-source** install with its own (potentially conflicting) requirements, so
+it's an optional, separate step — not part of `make install`:
+
+```bash
+./scripts/install_cosyvoice.sh          # clone + deps (torch trio held) + model download
+export COSYVOICE_ROOT=third_party/CosyVoice
+export COSYVOICE_MODEL_DIR=third_party/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B
+export COSYVOICE_FR_REF=/path/fr.wav    # optional: native fr-CA prosody (loses speaker identity)
+make test                               # confirm the install didn't disturb the pinned stack
+.venv/bin/dubbing run config/job.yaml --tts-provider cosyvoice   # or pick it in the web UI
+```
 
 ---
 
@@ -252,5 +273,5 @@ src/dubbing/
   gpu_runners.py         Demucs / pyannote / WhisperX (OSS GPU)
   modal_app.py           on-demand GPU functions (Modal)
   stages/                one module per pipeline stage
-  providers/             translation (ollama/claude) + TTS (chatterbox/elevenlabs/azure)
+  providers/             translation (ollama/claude) + TTS (chatterbox/cosyvoice/elevenlabs/azure)
 ```

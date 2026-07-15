@@ -75,6 +75,10 @@ premium = [
 ]
 # Browser UI for driving the pipeline (see dubbing/webapp.py, `make web`).
 webapp = ["gradio>=4.44"]
+# Local cross-lingual TTS (CosyVoice / Fun-CosyVoice 3.0). CosyVoice itself is a
+# from-source install with its own (conflicting) requirements — see
+# scripts/install_cosyvoice.sh — so this extra only carries the model downloader.
+tts-cosyvoice = ["modelscope>=1.9"]
 # Run the GPU stages on Modal instead of the local GPU.
 orchestration = ["modal>=0.64"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]
