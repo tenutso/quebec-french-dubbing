@@ -44,7 +44,9 @@ See [Run a dub](#run-a-dub-on-your-own-file) and [Setup](#setup).
 the dub style / providers / loudness, watch per-stage progress, and preview + download the
 dubbed video, subtitles, and mastered dub track. It calls the same pipeline as the CLI, so the
 same prerequisites apply (GPU, `ffmpeg` + `rubberband-cli`, `HF_TOKEN`, and Ollama for local
-translation).
+translation). A **Chatterbox voice tuning** panel exposes the cross-lingual knobs (CFG weight,
+exaggeration, temperature, chunk size, and an optional native fr-CA reference clip) so you can
+A/B accent/prosody without setting `CHATTERBOX_*` env vars by hand.
 
 ```bash
 make web                       # localhost + LAN on :7860

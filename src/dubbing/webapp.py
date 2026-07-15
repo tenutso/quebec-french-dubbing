@@ -65,6 +65,24 @@ def build_job(
     )
 
 
+def apply_chatterbox_env(cfg_weight, exaggeration, temperature, fr_ref, max_chars) -> None:
+    """Set the Chatterbox generation knobs the provider reads from the environment.
+
+    The provider is re-instantiated each run (reading these env vars in __init__), and the
+    app serializes runs via ``queue()``, so setting process env per run is safe. Every run
+    sets all knobs — including clearing the fr-CA reference — so nothing leaks across runs.
+    """
+    os.environ["CHATTERBOX_CFG_WEIGHT"] = str(float(cfg_weight))
+    os.environ["CHATTERBOX_EXAGGERATION"] = str(float(exaggeration))
+    os.environ["CHATTERBOX_TEMPERATURE"] = str(float(temperature))
+    os.environ["CHATTERBOX_MAX_CHARS"] = str(int(max_chars))
+    ref = getattr(fr_ref, "name", fr_ref) if fr_ref else None
+    if ref:
+        os.environ["CHATTERBOX_FR_REF"] = str(ref)
+    else:
+        os.environ.pop("CHATTERBOX_FR_REF", None)
+
+
 def process(
     video_file,
     dub_style: str,
@@ -73,6 +91,11 @@ def process(
     burn_in_subtitles: bool,
     translation: str,
     tts: str,
+    cfg_weight: float,
+    exaggeration: float,
+    temperature: float,
+    fr_ref,
+    max_chars: int,
     progress=gr.Progress(),
 ):
     """Run the full pipeline for an uploaded file and return UI outputs.
@@ -86,6 +109,7 @@ def process(
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     work_dir = Path(tempfile.mkdtemp(prefix=f"{src.stem}-{stamp}-", dir=_workroot()))
 
+    apply_chatterbox_env(cfg_weight, exaggeration, temperature, fr_ref, max_chars)
     job = build_job(
         src, work_dir,
         dub_style=dub_style, voice_strategy=voice_strategy, loudness=loudness,
@@ -162,6 +186,33 @@ def build_demo():
                 burn_in = gr.Checkbox(
                     label="Burn subtitles into the video", value=False
                 )
+                with gr.Accordion("Chatterbox voice tuning", open=False):
+                    gr.Markdown(
+                        "Cross-lingual cloning bleeds the English speaker's prosody into "
+                        "the French. Lower **CFG weight** to reduce that; supply a neutral "
+                        "**fr-CA reference** for native prosody (trades away the cloned "
+                        "voice). Applies only when TTS = `chatterbox`."
+                    )
+                    cfg_weight = gr.Slider(
+                        0.0, 1.0, value=0.5, step=0.05, label="CFG weight",
+                        info="lower (0.2–0.3) = less English-reference prosody",
+                    )
+                    with gr.Row():
+                        exaggeration = gr.Slider(
+                            0.0, 1.0, value=0.5, step=0.05, label="Exaggeration",
+                            info="lower = calmer delivery",
+                        )
+                        temperature = gr.Slider(
+                            0.1, 1.5, value=0.8, step=0.05, label="Temperature",
+                        )
+                    max_chars = gr.Slider(
+                        80, 400, value=180, step=10, label="Chunk size (chars)",
+                        info="smaller = more stable, fewer runaways/early cutoffs",
+                    )
+                    fr_ref = gr.File(
+                        label="Native fr-CA reference clip (optional, overrides clone)",
+                        file_types=[".wav", ".mp3", ".flac"],
+                    )
                 run_btn = gr.Button("Run dub", variant="primary")
             with gr.Column(scale=1):
                 video_out = gr.Video(label="Dubbed preview")
@@ -170,7 +221,10 @@ def build_demo():
 
         run_btn.click(
             fn=process,
-            inputs=[video_in, dub_style, voice_strategy, loudness, burn_in, translation, tts],
+            inputs=[
+                video_in, dub_style, voice_strategy, loudness, burn_in, translation, tts,
+                cfg_weight, exaggeration, temperature, fr_ref, max_chars,
+            ],
             outputs=[video_out, files_out, status_out],
         )
     return demo
