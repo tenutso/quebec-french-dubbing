@@ -116,9 +116,10 @@ python3 -m venv --system-site-packages .venv
 .venv/bin/pip install --constraint constraints-gpu.txt \
   --extra-index-url https://download.pytorch.org/whl/cu128 \
   -e ".[dev,tts-local]"
-# Chatterbox itself, WITHOUT its deps (it hard-pins torch==2.6.0; --no-deps
-# leaves the CUDA torch trio untouched):
-.venv/bin/pip install --no-deps chatterbox-tts==0.1.7
+# WhisperX and Chatterbox, each WITHOUT its deps — both carry a pin that a clean
+# resolve can't satisfy (whisperx caps huggingface_hub<1.0, which is stale;
+# chatterbox hard-pins torch==2.6.0). Their real deps are already installed above.
+.venv/bin/pip install --no-deps whisperx==3.8.6 chatterbox-tts==0.1.7
 
 # Optional premium cloud voices/translation (each needs that vendor's key):
 make install-premium
@@ -127,10 +128,12 @@ make install-premium
 #   install Ollama, then: ollama serve &  &&  ollama pull mistral-small
 ```
 
-`constraints-gpu.txt` pins the `torch/torchaudio/torchvision` trio so the model libraries
-(pyannote, WhisperX) can't downgrade your CUDA build. Chatterbox can't be pinned through a
-constraints file — it declares a hard `torch==2.6.0` dependency — so it is installed with
-`--no-deps` and its remaining runtime libraries come from the `tts-local` extra.
+`constraints-gpu.txt` pins the `torch/torchaudio/torchvision` trio (plus a CUDA-matched
+`torchcodec`) so the model libraries can't downgrade your CUDA build. Two libraries can't be
+resolved cleanly and are installed with `--no-deps`: **Chatterbox** (hard-pins `torch==2.6.0`;
+its other deps come from the `tts-local` extra) and **WhisperX** (its metadata caps
+`huggingface_hub<1.0`, which is stale — it runs fine on the 1.x that Chatterbox's
+`transformers==5.2.0` requires; its real deps live in the core dependency list).
 
 The GPU stages can also run on **Modal** instead of locally: `make deploy-gpu`, then
 `export DUBBING_GPU_BACKEND=modal`.

@@ -2,3 +2,8 @@
 torch==2.8.0+cu128
 torchaudio==2.8.0+cu128
 torchvision==0.23.0+cu128
+
+# pyannote 4.x decodes audio via torchcodec. The wheel must match the torch CUDA
+# build: 0.7.x is the torch-2.8 line (0.8+ targets newer CUDA and fails to load
+# libtorchcodec against cu128 with `libnvrtc.so.13: cannot open shared object`).
+torchcodec==0.7.0

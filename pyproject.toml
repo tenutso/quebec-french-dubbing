@@ -20,15 +20,30 @@ dependencies = [
     "pysubs2>=1.6",
     # Translation driver for the local Ollama endpoint (default provider)
     "requests>=2.31",
-    # Audio mastering / time-fit (also needs system ffmpeg + rubberband-cli)
+    # Audio mastering / time-fit (also needs system ffmpeg + rubberband-cli).
+    # pyrubberband must be >=0.4.0: the 0.3.0 sdist has no wheel and its setup.py
+    # imports the `imp` module, removed in Python 3.12, so it fails to build.
     "pyloudnorm>=0.1.1",
-    "pyrubberband>=0.3.0",
+    "pyrubberband>=0.4.0",
     "soundfile>=0.12",
-    "numpy>=1.26",
-    # OSS GPU stages
+    "numpy>=2.1",
+    # OSS GPU stages. Version floors here are load-bearing, not cosmetic, because
+    # Chatterbox's transformers==5.2.0 (see tts-local) pulls in huggingface_hub
+    # 1.x: pyannote.audio <4 forwards a removed `use_auth_token` arg to hf_hub
+    # (crashes diarization), so we require >=4. WhisperX is handled specially —
+    # see the note below and the Makefile `install` target.
     "demucs>=4.0",
-    "pyannote.audio>=3.1",
-    "whisperx>=3.1",
+    "pyannote.audio>=4.0",
+    # WhisperX ASR runtime deps. whisperx==3.8.6 itself is installed with
+    # --no-deps (like Chatterbox): its metadata caps huggingface_hub <1.0, which
+    # is stale — it runs fine on hf_hub 1.x — but that cap makes a clean resolve
+    # with transformers 5.2.0 impossible. These are its real runtime deps; the
+    # torch trio comes from the host and torchcodec from constraints-gpu.txt.
+    "ctranslate2>=4.5.0",
+    "faster-whisper>=1.2.0",
+    "nltk>=3.9.1",
+    "pandas>=2.2.3",
+    "omegaconf>=2.3.0",
 ]
 
 [project.optional-dependencies]
