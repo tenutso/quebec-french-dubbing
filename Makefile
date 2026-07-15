@@ -13,15 +13,16 @@ WHISPERX_VERSION ?= 3.8.6
 # PyTorch wheels matched to the CUDA build pinned in constraints-gpu.txt.
 TORCH_INDEX ?= https://download.pytorch.org/whl/cu128
 
-.PHONY: help venv install install-premium test fixture sample deploy-gpu clean
+.PHONY: help venv install install-premium test fixture sample web deploy-gpu clean
 
 help:
 	@echo "Targets:"
-	@echo "  install         Create the GPU venv and install the full local pipeline"
+	@echo "  install         Create the GPU venv and install the full local pipeline + web UI"
 	@echo "  install-premium Add the optional premium cloud provider SDKs"
 	@echo "  test            Run the test suite"
 	@echo "  fixture         Generate tests/fixtures/sample_2spk.mp4"
 	@echo "  sample          Run the pipeline on config/job.yaml"
+	@echo "  web             Launch the Gradio web UI on 0.0.0.0:7860"
 	@echo "  deploy-gpu      Deploy the Modal GPU app"
 
 # --system-site-packages reuses the host's CUDA-matched PyTorch.
@@ -35,7 +36,7 @@ venv:
 install: venv
 	$(PIP) install -q -U pip
 	$(PIP) install -q --constraint constraints-gpu.txt --extra-index-url $(TORCH_INDEX) \
-	  -e ".[dev,tts-local]"
+	  -e ".[dev,tts-local,webapp]"
 	$(PIP) install -q --no-deps "whisperx==$(WHISPERX_VERSION)" "chatterbox-tts==$(CHATTERBOX_VERSION)"
 
 install-premium:
@@ -50,6 +51,12 @@ fixture:
 
 sample: fixture
 	$(PY) -m dubbing.cli run config/job.yaml
+
+# HOST/PORT/SHARE are overridable: `make web SHARE=--share PORT=8000`.
+HOST ?= 0.0.0.0
+PORT ?= 7860
+web:
+	$(VENV)/bin/dubbing-web --host $(HOST) --port $(PORT) $(SHARE)
 
 deploy-gpu:
 	$(VENV)/bin/modal deploy src/dubbing/modal_app.py

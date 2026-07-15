@@ -19,6 +19,41 @@ where they move quality most, but nothing is required beyond GPU time.
 
 ---
 
+## Quick start
+
+On a fresh CUDA GPU box (Debian/Ubuntu or macOS), one command installs everything — system
+deps, the Python env, the web UI, and Ollama + a French model — then you can launch the
+browser app:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tenutso/quebec-french-dubbing/main/install.sh | bash
+# then, from the cloned repo:
+export HF_TOKEN=hf_xxx          # free, for the gated diarization model (accept its terms once)
+export DUBBING_GPU_BACKEND=local
+make web                        # http://localhost:7860  (add SHARE=--share for a public link)
+```
+
+`install.sh --launch` installs and opens the UI in one step. Prefer the CLI or a hand install?
+See [Run a dub](#run-a-dub-on-your-own-file) and [Setup](#setup).
+
+---
+
+## Web UI
+
+`make web` (or `dubbing-web`) serves a Gradio app on **`0.0.0.0:7860`**: drop in an MP4, pick
+the dub style / providers / loudness, watch per-stage progress, and preview + download the
+dubbed video, subtitles, and mastered dub track. It calls the same pipeline as the CLI, so the
+same prerequisites apply (GPU, `ffmpeg` + `rubberband-cli`, `HF_TOKEN`, and Ollama for local
+translation).
+
+```bash
+make web                       # localhost + LAN on :7860
+make web SHARE=--share         # also expose a temporary public Gradio link
+make web PORT=8000             # or dubbing-web --host 0.0.0.0 --port 8000 --share
+```
+
+---
+
 ## Run a dub on your own file
 
 > Assumes a Linux box with an NVIDIA GPU (≈16GB+), `ffmpeg`, and the project installed (see
@@ -168,6 +203,7 @@ Select per job in `config/job.yaml` under `providers:`, or override on the CLI w
 src/dubbing/
   pipeline.py            stage runner
   cli.py                 `dubbing run <config>` entry point
+  webapp.py              Gradio web UI (`dubbing-web` / `make web`)
   models.py              pydantic artifacts + job config
   subtitle_rules.py      Netflix fr-CA subtitle standards engine
   ffmpeg_utils.py        probe / extract / loudness helpers

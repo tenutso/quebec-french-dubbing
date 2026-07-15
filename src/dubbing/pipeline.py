@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from dubbing.models import (
     Cue,
@@ -47,8 +48,16 @@ class Context:
     output_path: Path | None = None
 
 
-def run(job: Job) -> Context:
+# A progress callback: (stage_label, completed_stages, total_stages) -> None.
+ProgressFn = Callable[[str, int, int], None]
+
+
+def run(job: Job, progress: ProgressFn | None = None) -> Context:
     """Execute the full pipeline for ``job`` and return the final context.
+
+    ``progress`` is an optional callback invoked as each stage starts, with the
+    stage's human label plus (completed, total) counts — used by the web UI to
+    render a progress bar. The CLI passes ``None``.
 
     Imports of stage modules are local so that a partial install (e.g. no GPU deps on a
     laptop authoring subtitles) doesn't break import of the package.
@@ -70,22 +79,33 @@ def run(job: Job) -> Context:
     job.work_dir.mkdir(parents=True, exist_ok=True)
     ctx = Context(job=job)
 
-    # --- OSS media core + GPU analysis --------------------------------------
-    ingest.run(ctx)
+    # Build the stage plan for this job's style, so progress totals are accurate.
+    # SRT/VTT are always produced (even subtitles-only jobs); separation and the
+    # TTS/time-fit/mix trio are conditional on the dub style.
+    plan: list[tuple[str, Callable[[Context], object]]] = [("Extracting audio", ingest.run)]
     if job.dub_style is DubStyle.FULL_REPLACEMENT:
-        separate.run(ctx)  # split vocals vs background so music/SFX survive the dub
-    diarize.run(ctx)
-    asr.run(ctx)
-
-    # --- Cues + premium stages ----------------------------------------------
-    cues.run(ctx)
-    translate.run(ctx)
-    subtitles.run(ctx)  # SRT/VTT are always produced, even subtitles-only jobs
-
+        plan.append(("Separating vocals / music", separate.run))
+    plan += [
+        ("Diarizing speakers", diarize.run),
+        ("Transcribing (ASR)", asr.run),
+        ("Building cues", cues.run),
+        ("Translating to fr-CA", translate.run),
+        ("Writing subtitles", subtitles.run),
+    ]
     if job.dub_style is not DubStyle.SUBTITLES_ONLY:
-        tts.run(ctx)
-        timefit.run(ctx)
-        mix.run(ctx)
+        plan += [
+            ("Synthesizing voices", tts.run),
+            ("Time-fitting audio", timefit.run),
+            ("Mixing (EBU R128)", mix.run),
+        ]
+    plan.append(("Muxing output", mux.run))
 
-    mux.run(ctx)
+    total = len(plan)
+    for done, (label, stage) in enumerate(plan):
+        if progress is not None:
+            progress(label, done, total)
+        stage(ctx)
+    if progress is not None:
+        progress("Done", total, total)
+
     return ctx
