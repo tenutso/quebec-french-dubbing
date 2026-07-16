@@ -90,6 +90,23 @@ def apply_chatterbox_env(
         os.environ.pop("CHATTERBOX_MODEL_DIR", None)
 
 
+def _ensure_providers_ready(translation: str, tts: str, progress) -> None:
+    """Install the runtimes for the selected providers before the pipeline starts.
+
+    Heavy local backends (e.g. ``cosyvoice``) aren't part of ``make install``; rather than
+    fail mid-run with a ``ModuleNotFoundError``, we install them the first time they're
+    selected. Providers with nothing to install are a no-op, so this is cheap to always
+    call. Progress lines surface in the Gradio progress bar.
+    """
+    from dubbing import providers
+
+    def _report(msg: str) -> None:
+        progress(0.0, desc=msg)
+
+    providers.ensure_translation_ready(translation, report=_report)
+    providers.ensure_tts_ready(tts, report=_report)
+
+
 def process(
     video_file,
     dub_style: str,
@@ -123,6 +140,14 @@ def process(
         dub_style=dub_style, voice_strategy=voice_strategy, loudness=loudness,
         burn_in_subtitles=burn_in_subtitles, translation=translation, tts=tts,
     )
+
+    # Install the selected providers' runtimes (e.g. cosyvoice) before starting, so a
+    # missing local backend self-installs instead of crashing mid-pipeline.
+    try:
+        _ensure_providers_ready(translation, tts, progress)
+    except Exception:
+        tb = traceback.format_exc()
+        return None, [], f"❌ **Provider setup failed.**\n\n```\n{tb.strip()[-2000:]}\n```"
 
     def _on_stage(label: str, done: int, total: int) -> None:
         progress(done / total, desc=label)

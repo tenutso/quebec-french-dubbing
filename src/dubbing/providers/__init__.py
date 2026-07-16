@@ -6,9 +6,13 @@ never imports a concrete vendor SDK directly.
 """
 
 from dubbing.providers.registry import (
+    ensure_translation_ready,
+    ensure_tts_ready,
     get_translation_provider,
     get_tts_provider,
+    register_translation_installer,
     register_translation_provider,
+    register_tts_installer,
     register_tts_provider,
 )
 from dubbing.providers.translation import TranslationProvider
@@ -32,4 +36,8 @@ __all__ = [
     "get_translation_provider",
     "register_tts_provider",
     "register_translation_provider",
+    "register_tts_installer",
+    "register_translation_installer",
+    "ensure_tts_ready",
+    "ensure_translation_ready",
 ]

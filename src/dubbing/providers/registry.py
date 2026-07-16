@@ -15,6 +15,14 @@ from dubbing.providers.tts import TTSProvider
 _TTS_FACTORIES: dict[str, Callable[..., TTSProvider]] = {}
 _TRANSLATION_FACTORIES: dict[str, Callable[..., TranslationProvider]] = {}
 
+# Optional per-provider "install/prepare the runtime" hooks, keyed by the same provider
+# name as the factories. Kept separate from the factories so a caller can make a provider
+# ready (download weights, clone a source checkout) WITHOUT constructing it — construction
+# for some providers builds an API client or imports a vendor SDK. Providers register an
+# installer only if they have setup that isn't covered by `make install`.
+_TTS_INSTALLERS: dict[str, Callable[..., None]] = {}
+_TRANSLATION_INSTALLERS: dict[str, Callable[..., None]] = {}
+
 F = TypeVar("F", bound=Callable[..., object])
 
 
@@ -32,6 +40,44 @@ def register_translation_provider(name: str) -> Callable[[F], F]:
         return factory
 
     return deco
+
+
+def register_tts_installer(name: str) -> Callable[[F], F]:
+    """Register a ``report=None`` callable that makes the named TTS runtime ready."""
+
+    def deco(fn: F) -> F:
+        _TTS_INSTALLERS[name] = fn  # type: ignore[assignment]
+        return fn
+
+    return deco
+
+
+def register_translation_installer(name: str) -> Callable[[F], F]:
+    """Register a ``report=None`` callable that makes the named translation runtime ready."""
+
+    def deco(fn: F) -> F:
+        _TRANSLATION_INSTALLERS[name] = fn  # type: ignore[assignment]
+        return fn
+
+    return deco
+
+
+def ensure_tts_ready(name: str, report: Callable[[str], None] | None = None) -> None:
+    """Run the installer for ``name`` if one is registered; a no-op otherwise.
+
+    ``report`` receives short human-readable progress lines (e.g. for a UI). Installers
+    are idempotent — safe to call before every run.
+    """
+    fn = _TTS_INSTALLERS.get(name)
+    if fn is not None:
+        fn(report=report)
+
+
+def ensure_translation_ready(name: str, report: Callable[[str], None] | None = None) -> None:
+    """Run the installer for ``name`` if one is registered; a no-op otherwise."""
+    fn = _TRANSLATION_INSTALLERS.get(name)
+    if fn is not None:
+        fn(report=report)
 
 
 def get_tts_provider(name: str, **kwargs: object) -> TTSProvider:

@@ -57,7 +57,7 @@ gradio>=6
 EOF
 "$PIP" install --constraint "$CONSTRAINT" \
   hyperpyyaml gdown hydra-core wget inflect wetext modelscope \
-  openai-whisper pyworld x-transformers onnxruntime
+  openai-whisper pyworld x-transformers onnxruntime pyarrow
 
 # 3. Download the Fun-CosyVoice 3.0 model (once).
 log "Downloading model $MODEL_ID -> $MODEL_DIR"

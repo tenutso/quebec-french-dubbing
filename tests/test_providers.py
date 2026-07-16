@@ -102,12 +102,116 @@ def test_cosyvoice_cross_lingual_synthesis(tmp_path):
         locale="fr-CA",
     )
 
-    # Cross-lingual called with the French text + the reference filepath (not a tensor).
-    assert fake.calls == [("Bonjour le monde", str(ref), False)]
+    # CosyVoice3 requires an instruct prefix ending in <|endofprompt|> ahead of the text,
+    # else its LLM asserts and yields a silent clip. Reference is the filepath, not a tensor.
+    assert fake.calls == [
+        ("You are a helpful assistant.<|endofprompt|>Bonjour le monde", str(ref), False)
+    ]
     # Both yielded chunks were concatenated (2400 + 1200) at the model sample rate.
     assert out.exists()
     with wave.open(str(out)) as w:
         assert w.getnframes() == 3600 and w.getframerate() == 24000
+
+
+class _KernelFailCosy:
+    """Always raises CosyVoice's too-few-frames vocoder error (to exercise the fallback)."""
+
+    sample_rate = 24000
+
+    def inference_cross_lingual(self, text, prompt, stream=False):
+        raise RuntimeError(
+            "Calculated padded input size per channel: (3). Kernel size: (4). "
+            "Kernel size can't be greater than actual input size"
+        )
+        yield  # pragma: no cover — makes this a generator
+
+
+def test_cosyvoice_vocoder_underrun_falls_back_to_silence(tmp_path):
+    """A cue the vocoder can't render emits silence sized to the cue, not a crash."""
+    import wave
+
+    from dubbing.providers.tts import VoiceRef
+    from dubbing.providers.tts_cosyvoice import CosyVoiceTTS
+
+    ref = tmp_path / "ref.wav"
+    ref.write_bytes(b"x")
+    provider = CosyVoiceTTS(model=_KernelFailCosy())
+    out = tmp_path / "o.wav"
+
+    provider.synthesize(
+        "Oh", VoiceRef(provider="cosyvoice", voice_id=str(ref), is_clone=True), out,
+        target_duration=0.5,
+    )
+    assert out.exists()
+    with wave.open(str(out)) as w:
+        assert w.getnframes() == int(24000 * 0.5) and w.getframerate() == 24000
+
+
+def test_cosyvoice_trims_overlong_prompt(tmp_path):
+    """CosyVoice asserts prompt audio <=30s; over-long clone refs must be trimmed before
+    being handed to the model (else it crashes mid-synth)."""
+    import torch
+    import torchaudio
+
+    from dubbing.providers.tts import VoiceRef
+    from dubbing.providers.tts_cosyvoice import CosyVoiceTTS
+
+    ref = tmp_path / "long_ref.wav"
+    torchaudio.save(str(ref), torch.zeros(1, 16000 * 3), 16000)  # 3s clip
+
+    fake = _FakeCosy()
+    provider = CosyVoiceTTS(model=fake)
+    provider._max_prompt_s = 1.0  # force a trim
+    provider.synthesize(
+        "Bonjour", VoiceRef(provider="cosyvoice", voice_id=str(ref), is_clone=True),
+        tmp_path / "o.wav", locale="fr-CA",
+    )
+
+    used_prompt = fake.calls[0][1]
+    assert used_prompt != str(ref)  # a trimmed copy, not the original
+    info = torchaudio.info(used_prompt)
+    assert info.num_frames / info.sample_rate <= 1.0 + 1e-3
+
+
+def test_cosyvoice_resolves_paths_from_root_when_model_dir_unset(tmp_path, monkeypatch):
+    """The reported bug: with COSYVOICE_ROOT/MODEL_DIR unset the import/model paths must
+    still resolve. COSYVOICE_ROOT alone should derive the model dir under it."""
+    from dubbing.providers import tts_cosyvoice as cv
+
+    monkeypatch.delenv("COSYVOICE_MODEL_DIR", raising=False)
+    monkeypatch.setenv("COSYVOICE_ROOT", str(tmp_path))
+    assert cv._resolve_root() == tmp_path.resolve()
+    assert cv._resolve_model_dir() == str(tmp_path / "pretrained_models/Fun-CosyVoice3-0.5B")
+
+    # An explicit COSYVOICE_MODEL_DIR wins over the derived path.
+    monkeypatch.setenv("COSYVOICE_MODEL_DIR", "/models/cv")
+    assert cv._resolve_model_dir() == "/models/cv"
+
+
+def test_cosyvoice_installer_registered_and_noop_when_installed(monkeypatch):
+    """`cosyvoice` registers an installer; it must not shell out when already installed."""
+    import subprocess
+
+    from dubbing import providers
+    from dubbing.providers import tts_cosyvoice as cv
+
+    assert "cosyvoice" in providers.registry._TTS_INSTALLERS
+    monkeypatch.setattr(cv, "_is_installed", lambda: True)
+    # If the no-op short-circuit regresses, this makes the errant shell-out fail loudly.
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: pytest.fail("installer must not shell out when already installed"),
+    )
+    providers.ensure_tts_ready("cosyvoice")  # no-op, must not raise
+
+
+def test_ensure_ready_is_noop_for_providers_without_installer():
+    """Providers that ship with `make install` have no installer -> a safe no-op."""
+    from dubbing import providers
+
+    providers.ensure_tts_ready("chatterbox")  # no installer registered
+    providers.ensure_tts_ready("elevenlabs")  # must not construct the provider
+    providers.ensure_translation_ready("ollama")
 
 
 def test_cosyvoice_requires_a_reference(tmp_path):
